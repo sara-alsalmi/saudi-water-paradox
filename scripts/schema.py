@@ -1,0 +1,87 @@
+"""Single source of truth for output columns -> used by 09_build_table, data_dictionary.csv and QA.
+
+role:
+  id             identifiers / coordinates / grouping (not predictors)
+  feature        predictor known at or before t0
+  trigger        event rainfall (allowed as trigger in the susceptibility design)
+  label          target
+  label_meta     describes the label; NOT a feature (leakage) — never train on it
+"""
+COLUMNS = [
+    # name, role, unit, description, source, native_resolution, resampling_to_30m, time_reference
+    ("cell_id", "id", "-", "Row-major index of the 30 m cell on the AOI reference grid (EPSG:32637, 60 m-snapped origin)", "derived", "-", "-", "-"),
+    ("event_id", "id", "-", "Event identifier (JED_20221124). Key = cell_id + event_id", "config", "-", "-", "-"),
+    ("x", "id", "m", "Cell-centre easting, UTM 37N (EPSG:32637)", "derived", "30 m", "-", "-"),
+    ("y", "id", "m", "Cell-centre northing, UTM 37N (EPSG:32637)", "derived", "30 m", "-", "-"),
+    ("lon", "id", "deg", "Cell-centre longitude (WGS84)", "derived", "-", "-", "-"),
+    ("lat", "id", "deg", "Cell-centre latitude (WGS84)", "derived", "-", "-", "-"),
+    ("block_id", "id", "-", "1 km x 1 km spatial block (UTM km 'E_N' of lower-left corner) for spatial cross-validation", "derived", "1 km", "-", "-"),
+    ("t0_utc", "id", "ISO-8601", "Prediction reference time (2022-11-24T00:00:00Z)", "config", "-", "-", "-"),
+    ("elevation_m", "feature", "m (EGM2008)", "Surface elevation. Copernicus DEM is a DSM: includes buildings/vegetation", "Copernicus DEM GLO-30 (2021 release)", "1 arcsec (~30 m)", "bilinear", "static (<= t0)"),
+    ("slope_deg", "feature", "deg", "Slope (Horn 1981) of the 30 m DSM", "derived from Copernicus DEM", "30 m", "computed on 30 m grid", "static (<= t0)"),
+    ("flowacc_km2", "feature", "km2", "D8 upstream contributing area incl. the cell (on catchment-extended, depression-filled DEM)", "derived from Copernicus DEM", "30 m", "computed on 30 m grid", "static (<= t0)"),
+    ("twi", "feature", "-", "Topographic Wetness Index ln(a / tan b), a = acc_cells*30 m, tan b floored at 0.001", "derived from Copernicus DEM", "30 m", "computed on 30 m grid", "static (<= t0)"),
+    ("hand_m", "feature", "m", "Height Above Nearest Drainage on the conditioned DSM. Drainage = channel cells (upstream area >= 1 km2) OR coastal outlet cells (sea treated as drainage outlet); see hand_ref_is_sea", "derived from Copernicus DEM", "30 m", "computed on 30 m grid", "static (<= t0)"),
+    ("hand_ref_is_sea", "meta", "0/1", "1 if hand_m is measured to a coastal outlet cell (flow reaches the sea without crossing a >= 1 km2 channel), 0 if measured to a channel", "derived from Copernicus DEM", "30 m", "computed on 30 m grid", "static (<= t0)"),
+    ("landcover", "feature", "class code", "ESA WorldCover class (10 tree,20 shrub,30 grass,40 crop,50 built-up,60 bare/sparse,80 water,90 wetland,95 mangrove)", "ESA WorldCover 2021 v200", "10 m", "mode (majority of 10 m pixels)", "2021 (<= t0)"),
+    ("landcover_name", "feature", "-", "Name of landcover class (same information as landcover)", "ESA WorldCover 2021 v200", "10 m", "mode", "2021 (<= t0)"),
+    ("elev_bin", "feature", "-", "Fixed elevation bin: 0-10 (incl. <0), 10-25, 25-50, 50-100, >100 m; used for negative stratification", "derived", "30 m", "-", "static (<= t0)"),
+    ("dist_to_coast_m", "feature", "m", "Euclidean distance from cell centre to nearest sea cell (DEM = 0 m, connected sea body)", "derived from Copernicus DEM", "30 m", "computed on 30 m grid", "static (<= t0)"),
+    ("dist_to_ref_water_m", "feature", "m", "Distance from cell centre to nearest GFM reference (permanent/seasonal) water pixel", "Copernicus GFM reference water mask (2017-2021)", "20 m", "nearest to 10 m, distance at cell centre", "2017-2021 (<= t0)"),
+    ("rain_antecedent_7d_mm", "feature", "mm", "IMERG precipitation total 2022-11-17T00:00Z to t0", "GPM IMERG V07 Final half-hourly", "0.1 deg / 30 min", "nearest (cell containing centre)", "<= t0"),
+    ("sm_surface_m3m3", "feature", "m3/m3", "SMAP L4 surface (0-5 cm) soil moisture, 3-h mean 2022-11-23T21:00Z to t0", "NASA SMAP L4 SPL4SMGP v008", "9 km EASE-Grid 2.0", "nearest EASE cell", "<= t0"),
+    ("sm_rootzone_m3m3", "feature", "m3/m3", "SMAP L4 root-zone (0-100 cm) soil moisture, same window", "NASA SMAP L4 SPL4SMGP v008", "9 km EASE-Grid 2.0", "nearest EASE cell", "<= t0"),
+    ("sm_filled_from_neighbor", "meta", "0/1", "1 if SMAP had no value in the cell's EASE cell (coast) and the nearest valid EASE cell was used", "derived", "-", "-", "<= t0"),
+    ("rain_event_24h_mm", "trigger", "mm", "IMERG total 2022-11-24T00:00Z to 2022-11-25T00:00Z (event trigger)", "GPM IMERG V07 Final half-hourly", "0.1 deg / 30 min", "nearest (cell containing centre)", "event window (trigger, after t0)"),
+    ("rain_event_max30_mmhr", "trigger", "mm/hr", "Max half-hourly IMERG rate in the event window", "GPM IMERG V07 Final half-hourly", "0.1 deg / 30 min", "nearest", "event window (trigger, after t0)"),
+    ("rain_upstream_event_mm", "trigger", "mm", "Mean event rainfall over the cell's full upstream catchment (flow-weighted accumulation / cell count)", "IMERG + Copernicus DEM", "0.1 deg routed on 30 m D8", "nearest to 30 m then routed", "event window (trigger, after t0)"),
+    ("label", "label", "0/1", "1 = GFM flooded on 2022-11-29 (flood_fraction >= 0.5); 0 = observed with no water on 2022-11-29 (all 10 m subpixels observed, not excluded, not reference water, >= 250 m from any flooded pixel). 0 does NOT mean safe", "Copernicus GFM ensemble_flood_extent v3.1.0", "20 m", "nearest to 10 m sub-grid, fraction per 30 m cell", "2022-11-29 (after event)"),
+    ("label_source", "label_meta", "-", "Label product and version", "Copernicus GFM", "-", "-", "-"),
+    ("label_obs_utc", "label_meta", "ISO-8601", "Sentinel-1 acquisition time of the labelling scene — NOT a feature", "Copernicus GFM", "-", "-", "2022-11-29 (after event)"),
+    ("flood_fraction", "label_meta", "0-1", "Fraction of the cell's 10 m subpixels flagged flooded by GFM — derived from the label, NOT a feature", "Copernicus GFM", "20 m", "nearest to 10 m, mean per 30 m cell", "2022-11-29 (after event)"),
+    ("s2_water_confirmed", "label_meta", "0/1/NaN", "Label-quality flag, NOT a feature — do not use for training. 1 if (NDWI 27 Nov - NDWI 22 Nov) > 0.1 or MNDWI 27 Nov > 0 (cell means over valid 10 m pixels), else 0; NaN if < 5 of 9 subpixels valid on either date", "Sentinel-2 L2A (Earth Search)", "10/20 m", "nearest/average to 10 m, mean per 30 m cell", "2022-11-27 (after event)"),
+    ("sampling_stratum", "label_meta", "-", "Stratum used for negative sampling: 'landcover|elev_bin' (stratified file) or 'elevq<k>[lo,hi)' positive-elevation quantile bin (elev_matched file)", "derived", "-", "-", "-"),
+]
+
+RAIN_CAUTION = ("USE WITH CAUTION — single-event, spurious spatial correlation with the label "
+                "(lower IMERG rain at coastal positives)")
+CAUTION = {c: RAIN_CAUTION for c in ("rain_antecedent_7d_mm", "rain_event_24h_mm", "rain_event_max30_mmhr",
+                                     "rain_upstream_event_mm")}
+CAUTION["s2_water_confirmed"] = "NOT A FEATURE — do not use for training (post-event label-quality metadata)"
+for _c in ("label_source", "label_obs_utc", "flood_fraction", "sampling_stratum"):
+    CAUTION[_c] = "NOT A FEATURE — label metadata"
+CAUTION["rain_upstream_event_mm"] = (RAIN_CAUTION + "; nearly identical to rain_event_24h_mm in this event "
+                                     "(equal in ~96 % of rows: most catchments lie inside one IMERG cell) — "
+                                     "do not treat it as an independent variable")
+CAUTION["sm_filled_from_neighbor"] = ("constant in this event (no coastal SMAP fill was needed) — no information")
+CAUTION["hand_ref_is_sea"] = ("metadata flag; strongly associated with the label (coastal proxy) — "
+                              "do not use for training")
+
+NAMES = [c[0] for c in COLUMNS]
+ROLE = {c[0]: c[1] for c in COLUMNS}
+MODEL_INPUTS = [c[0] for c in COLUMNS if c[1] in ("feature", "trigger")]
+NEVER_FEATURES = [c[0] for c in COLUMNS if c[1] in ("label", "label_meta", "meta", "id")]
+
+
+def write_dictionary(path) -> None:
+    """data_dictionary.csv from COLUMNS (no table rebuild needed)."""
+    import csv
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["column", "role", "use_as_model_input", "caution", "unit", "description", "source",
+                    "native_resolution", "resampling_to_30m_grid", "time_reference"])
+        for c in COLUMNS:
+            use = "yes" if c[1] in ("feature", "trigger") else "NO"
+            w.writerow([c[0], c[1], use, CAUTION.get(c[0], ""), c[2], c[3], c[4], c[5], c[6], c[7]])
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    write_dictionary(Path(__file__).resolve().parents[1] / "data_dictionary.csv")
+    print("data_dictionary.csv written")
+
+WORLDCOVER = {10: "tree_cover", 20: "shrubland", 30: "grassland", 40: "cropland", 50: "built_up",
+              60: "bare_sparse", 70: "snow_ice", 80: "permanent_water", 90: "herbaceous_wetland",
+              95: "mangroves", 100: "moss_lichen"}
+ELEV_BINS = [-float("inf"), 10, 25, 50, 100, float("inf")]
+ELEV_LABELS = ["0-10", "10-25", "25-50", "50-100", ">100"]

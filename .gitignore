@@ -1,0 +1,32 @@
+# Raw downloads (re-creatable from scripts + manifest)
+data/raw/*
+!data/raw/manifest.csv
+
+# Interim rasters (re-creatable; not deliverables)
+data/interim/
+
+# Credentials — never commit
+.netrc
+_netrc
+.urs_cookies
+.dodsrc
+*.env
+.env*
+credentials*
+*secret*
+*token*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Archives and local tool settings (not part of the project)
+*.zip
+.claude/
+skills-lock.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
