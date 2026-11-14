@@ -6,6 +6,7 @@ reference grid nest exactly.
 from __future__ import annotations
 
 import math
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -59,6 +60,39 @@ def clip_cog(href: str, bbox_wgs84, pad_m: float, out_path: Path) -> tuple[int, 
             dst.write(data)
             dst.update_tags(source_href=href)
         return int(w.width), int(w.height)
+
+
+def iso(s: str) -> datetime:
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def events(cfg: dict, argv: list[str] | None = None) -> list[dict]:
+    """Events from config (in config order) with derived time windows (all UTC datetimes):
+      t0, event_end = t0 + rain.event_hours, ante_start = t0 - rain.antecedent_days,
+      dl_end = gfm_post_date + 1 day (end of IMERG download), label_acq = label scene time.
+    Optional argv: event_ids to keep (scripts accept them as command-line arguments)."""
+    keep = set(argv or [])
+    out = []
+    for e in cfg["events"]:
+        if keep and e["event_id"] not in keep:
+            continue
+        e = dict(e)
+        e["t0"] = iso(e["t0_utc"])
+        e["event_end"] = e["t0"] + timedelta(hours=cfg["rain"]["event_hours"])
+        e["ante_start"] = e["t0"] - timedelta(days=cfg["rain"]["antecedent_days"])
+        e["dl_end"] = datetime.fromisoformat(e["gfm_post_date"]).replace(tzinfo=timezone.utc) + timedelta(days=1)
+        e["label_acq"] = iso(e["label_acq_utc"])
+        e["year"] = e["t0"].year
+        out.append(e)
+    if keep and len(out) != len(keep):
+        raise SystemExit(f"unknown event_id(s): {keep - {e['event_id'] for e in out}}")
+    return out
+
+
+def interim_path(name: str, event_id: str) -> Path:
+    """Per-event interim file, e.g. data/interim/rain_0p1deg_JED_20221124.tif"""
+    stem, dot, ext = name.rpartition(".")
+    return ROOT / "data" / "interim" / f"{stem}_{event_id}.{ext}"
 
 
 def make_grid(cfg: dict, res: float) -> tuple[Affine, int, int, tuple]:

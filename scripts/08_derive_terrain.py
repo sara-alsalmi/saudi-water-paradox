@@ -8,7 +8,8 @@ Stage B (fine, grid.resolution_m): recompute on the catchment bounding box (+pad
   fill pits -> fill depressions -> resolve flats -> D8 -> accumulation, slope (Horn),
   TWI = ln(a / tan b) with a = acc_cells * res (specific catchment area, m), tan b >= tan_min,
   channels = acc_cells * res^2 >= hand_channel_area_m2, HAND w.r.t. those channels,
-  rain_upstream_event_mm = flow-weighted mean of event rain over each cell's upstream area.
+  rain_upstream_event_mm__<event_id> = flow-weighted mean of that event's 24 h rain over each
+  cell's upstream area (one band per event; needs 07_derive_rain.py for every event first).
 
 Sea: Copernicus DEM ocean = 0 m exactly; missing (ocean-only) tiles -> nodata. Both are set
 to nodata so that land drains to the sea boundary. Copernicus DEM is a DSM (buildings incl.).
@@ -33,7 +34,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import breadth_first_order
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, SNAP_M, aoi_bounds_utm, load_config  # noqa: E402
+from common import ROOT, SNAP_M, aoi_bounds_utm, events, interim_path, load_config  # noqa: E402
 
 DIRMAP = (64, 128, 1, 2, 4, 8, 16, 32)          # N, NE, E, SE, S, SW, W, NW (pysheds default)
 OFFS = {64: (-1, 0), 128: (-1, 1), 1: (0, 1), 2: (1, 1), 4: (1, 0), 8: (1, -1), 16: (0, -1), 32: (-1, -1)}
@@ -190,22 +191,24 @@ def main():
     n_outlets = int(outlet.sum())
     del idx, zc, outlet, drain
 
-    # upstream-mean event rain (flow-weighted accumulation / cell count)
-    rain = np.full(dem.shape, np.nan, np.float32)
-    with rasterio.open(INTERIM / "rain_0p1deg.tif") as src:
-        assert src.descriptions[0] == "rain_event_24h_mm"
-        reproject(rasterio.band(src, 1), rain, dst_transform=tr, dst_crs=crs, dst_nodata=np.nan,
-                  resampling=Resampling.nearest)
-    w_r = Raster(np.where(land, np.nan_to_num(rain, nan=0.0), 0.0).astype(np.float64), viewfinder=fdir.viewfinder)
-    racc = np.asarray(grid.accumulation(fdir, weights=w_r, dirmap=DIRMAP), dtype=np.float64)
-    rain_up = racc / accn
-    rain_missing = int((land & np.isnan(rain)).sum())
+    # upstream-mean event rain per event (flow-weighted accumulation / cell count)
+    rain_up, rain_missing = {}, {}
+    for ev in events(cfg):
+        eid = ev["event_id"]
+        rain = np.full(dem.shape, np.nan, np.float32)
+        with rasterio.open(interim_path("rain_0p1deg.tif", eid)) as src:
+            assert src.descriptions[0] == "rain_event_24h_mm"
+            reproject(rasterio.band(src, 1), rain, dst_transform=tr, dst_crs=crs, dst_nodata=np.nan,
+                      resampling=Resampling.nearest)
+        w_r = Raster(np.where(land, np.nan_to_num(rain, nan=0.0), 0.0).astype(np.float64), viewfinder=fdir.viewfinder)
+        racc = np.asarray(grid.accumulation(fdir, weights=w_r, dirmap=DIRMAP), dtype=np.float64)
+        rain_up[eid] = racc / accn
+        rain_missing[eid] = int((land & np.isnan(rain)).sum())
 
-    for a in (slope, twi, hand, rain_up, accn, hand_ref_is_sea):
+    for a in (slope, twi, hand, accn, hand_ref_is_sea, *rain_up.values()):
         a[sea] = np.nan
-    names = ["elevation_m", "slope_deg", "flowacc_cells", "twi", "hand_m", "rain_upstream_event_mm", "sea_mask",
-             "hand_ref_is_sea"]
-    arrs = [np.where(sea, np.nan, dem), slope, accn, twi, hand, rain_up, sea.astype(np.float32), hand_ref_is_sea]
+    names = ["elevation_m", "slope_deg", "flowacc_cells", "twi", "hand_m", "sea_mask", "hand_ref_is_sea"] +         [f"rain_upstream_event_mm__{eid}" for eid in rain_up]
+    arrs = [np.where(sea, np.nan, dem), slope, accn, twi, hand, sea.astype(np.float32), hand_ref_is_sea] +         list(rain_up.values())
     with rasterio.open(INTERIM / "terrain_30m.tif", "w", driver="GTiff", width=dem.shape[1], height=dem.shape[0],
                        count=len(arrs), dtype="float32", crs=crs, transform=tr, nodata=np.nan, compress="deflate",
                        tiled=True, predictor=3) as dst:

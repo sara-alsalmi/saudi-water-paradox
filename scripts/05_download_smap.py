@@ -1,10 +1,12 @@
-"""Download SMAP L4 SPL4SMGP (3-hourly, 9 km EASE-Grid 2.0) — the latest granule whose
-time window ENDS at or before t0 — subset to soil_moisture.bbox_wgs84 via OPeNDAP.
+"""Download SMAP L4 SPL4SMGP (3-hourly, 9 km EASE-Grid 2.0) per event — the latest granule whose
+time window ENDS at or before the event's t0 — subset to soil_moisture.bbox_wgs84 via OPeNDAP.
+
+Usage: 05_download_smap.py [EVENT_ID ...]   (default: all events)
 """
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import earthaccess
@@ -13,22 +15,23 @@ import numpy as np
 from pyproj import Transformer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, load_config  # noqa: E402
+from common import ROOT, events, iso, load_config  # noqa: E402
 from manifest import already_have, record  # noqa: E402
 from nasa_opendap import get, login, opendap_url, subset_url, var_dims  # noqa: E402
 
 
-def iso(s):
-    return datetime.fromisoformat(s.replace("Z", "+00:00"))
-
-
 def main():
     cfg = load_config()
+    session = login()
+    for ev in events(cfg, sys.argv[1:]):
+        print(f"[{ev['event_id']}]")
+        download_event(cfg, session, ev["t0"])
+
+
+def download_event(cfg, session, t0):
     sm = cfg["soil_moisture"]
-    t0 = iso(cfg["time"]["t0_utc"])
     out = ROOT / cfg["paths"]["raw"] / "smap"
     out.mkdir(parents=True, exist_ok=True)
-    session = login()
 
     grans = earthaccess.search_data(short_name=sm["short_name"], version=sm["version"],
                                     temporal=((t0 - timedelta(hours=12)).isoformat(), t0.isoformat()), count=-1)

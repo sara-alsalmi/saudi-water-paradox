@@ -3,7 +3,49 @@
 
 project:
   name: saudi_water_paradox_jeddah_pilot
-  event_id: JED_20221124
+  version: 2                       # v1 = single event (2022-11-24); v2 = three events (git keeps v1)
+
+# ---------------------------------------------------------------------------------------------
+# Flood events (approved 2026-11-14: JED_20171121 + JED_20221124). Everything date-specific lives here; settings below are shared.
+#   t0_utc            prediction reference time = 00:00 UTC of the event day (event rain window = 24 h)
+#   gfm_pre_date      GFM baseline acquisition date (water already present -> neither label class)
+#   gfm_post_date     GFM label acquisition date
+#   label_acq_utc     Sentinel-1 acquisition time of the label scene (end of the QA rain window)
+#   imerg_short_name  GPM_3IMERGHH (Final run) or GPM_3IMERGHHL (Late run: Final not yet published)
+#   s2_pre_dates / s2_post_dates  Sentinel-2 dates, in priority order (first clear pixel wins)
+# Rejected events and reasons: docs/data_sources.md
+# ---------------------------------------------------------------------------------------------
+events:
+  - event_id: JED_20171121
+    t0_utc: "2017-11-21T00:00:00Z"
+    gfm_pre_date: "2017-11-13"
+    gfm_post_date: "2017-11-25"
+    label_acq_utc: "2017-11-25T15:28:43Z"
+    imerg_short_name: GPM_3IMERGHH
+    imerg_run: Final
+    s2_pre_dates: ["2017-11-18", "2017-11-13"]
+    s2_post_dates: ["2017-11-23"]   # 2017-11-28 dropped (adds only tile 37QED, already on 23 Nov; S2 size cap)
+  - event_id: JED_20221124
+    t0_utc: "2022-11-24T00:00:00Z"
+    gfm_pre_date: "2022-11-17"
+    gfm_post_date: "2022-11-29"
+    label_acq_utc: "2022-11-29T15:29:57Z"
+    imerg_short_name: GPM_3IMERGHH
+    imerg_run: Final
+    s2_pre_dates: ["2022-11-22"]
+    s2_post_dates: ["2022-11-27"]
+  # EVALUATED AND REJECTED 2026-11-14 (GFM v4.1.0 labels indistinguishable from noise; evidence in
+  # docs/data_sources.md and docs/checks/JED_20251209/). Kept commented out so it can be revisited.
+  # If re-enabled: IMERG Late run, GFM v4.1.0, and S2 post dates are 7-9 days after the event.
+  # - event_id: JED_20251209
+  #   t0_utc: "2025-12-09T00:00:00Z"   # rain of 8 Dec (~7 mm AOI mean) would be antecedent
+  #   gfm_pre_date: "2025-12-01"
+  #   gfm_post_date: "2025-12-13"
+  #   label_acq_utc: "2025-12-13T15:28:35Z"
+  #   imerg_short_name: GPM_3IMERGHHL  # IMERG Final not yet published for Dec 2025 (CMR ends 2025-09-30)
+  #   imerg_run: Late
+  #   s2_pre_dates: ["2025-11-28"]
+  #   s2_post_dates: ["2025-12-16", "2025-12-18"]
 
 aoi:
   # Study area (approved): minlon, minlat, maxlon, maxlat (WGS84)
@@ -13,15 +55,14 @@ grid:
   crs: "EPSG:32637"        # WGS 84 / UTM zone 37N
   resolution_m: 30
 
-time:
-  t0_utc: "2022-11-24T00:00:00Z"   # all non-trigger predictors must be <= t0
-
 labels:
   source: GFM
   stac_api: "https://stac.eodc.eu/api/v1"
   collection: GFM
-  pre_event_date: "2022-11-17"     # baseline check (expect ~0 flood pixels)
-  post_event_date: "2022-11-29"    # label date (Sentinel-1, ~5 days after event)
+  # Dates per event: events[].gfm_pre_date / gfm_post_date
+  # "New flood vs baseline" rule (approved 2026-11-14, all events): a 10 m subpixel is NEW FLOOD if
+  # flooded on the label scene and NOT flooded on the baseline scene. Subpixels flooded on the
+  # baseline ("baseline water") are neither positive nor negative and count in the negative buffer.
   assets: [ensemble_flood_extent, exclusion_mask, reference_water_mask, advisory_flags]
   # approved after label-check review (2026-11-14)
   flood_fraction_threshold: 0.5    # min fraction of 20 m flooded pixels inside a 30 m cell for label=1
@@ -42,9 +83,10 @@ verification:
   # Sentinel-2 is used ONLY to visually/statistically verify GFM labels.
   s2_stac_api: "https://earth-search.aws.element84.com/v1"
   s2_collection: sentinel-2-l2a
-  s2_pre_date: "2022-11-22"
-  s2_post_date: "2022-11-27"
-  s2_max_cloud_pct: 10
+  # Dates per event: events[].s2_pre_dates / s2_post_dates
+  s2_max_cloud_pct: 10             # scene (tile) cloud cover limit; pixels are also masked with SCL
+  s2_bands: [green, nir, swir16, scl]   # only what s2_water_confirmed needs
+  s2_clip_pad_m: 0                 # S2 clips cover the AOI only (flag is computed on the AOI grid)
   check_resolution_m: 20           # common grid for the review map (GFM native = 20 m)
   # s2_water_confirmed (label-quality metadata, NOT a feature):
   #   1 if dNDWI > s2_dndwi_min OR post MNDWI > s2_mndwi_post_min, else 0; NaN if S2 cloudy/missing
@@ -72,20 +114,17 @@ terrain:
 
 landcover:
   source: esa_worldcover
-  year: 2021
+  year: 2021                       # used for ALL events -> column landcover_year_gap = event year - 2021
   version: v200
   url_template: "https://esa-worldcover.s3.eu-central-1.amazonaws.com/{version}/{year}/map/ESA_WorldCover_10m_{year}_{version}_{tile}_Map.tif"
 
 rain:
-  short_name: GPM_3IMERGHH       # IMERG V07 Final Run, half-hourly, 0.1 deg
+  # IMERG V07 half-hourly, 0.1 deg. Product per event: events[].imerg_short_name (Final or Late run).
   version: "07"
-  # Download window (features are chosen in step 4; antecedent part is <= t0, event part is the trigger)
-  start_utc: "2022-11-17T00:00:00Z"
-  end_utc: "2022-11-30T00:00:00Z"   # Nov 25-29 downloaded for QA ONLY (rain between event and label date)
-  event_start_utc: "2022-11-24T00:00:00Z"   # trigger window (rain_event_*)
-  event_end_utc: "2022-11-25T00:00:00Z"
+  # Download window per event: [t0 - antecedent_days, gfm_post_date + 1 day). The part after the
+  # event window is QA ONLY (rain between event and label acquisition), never a feature.
+  event_hours: 24                           # trigger window [t0, t0 + 24 h) (rain_event_*)
   antecedent_days: 7                        # rain_antecedent_7d_mm: [t0 - 7 d, t0)
-  qa_after_event_end_utc: "2022-11-29T15:30:00Z"   # GFM post acquisition ~15:29:57 UTC
   bbox_wgs84: [38.0, 20.0, 41.0, 23.0]   # = hydro extent, so upstream rainfall is available
 
 soil_moisture:
@@ -93,7 +132,7 @@ soil_moisture:
   version: "008"
   variables: [sm_surface, sm_rootzone]
   bbox_wgs84: [38.0, 20.0, 41.0, 23.0]
-  # granule chosen = latest one whose time window ENDS <= t0
+  # per event: granule chosen = latest one whose time window ENDS <= t0
 
 paths:
   raw: data/raw

@@ -170,23 +170,43 @@
       ]
     ]
   },
+  "event": {
+    "event_id": "JED_20221124",
+    "t0_utc": "2022-11-24T00:00:00Z",
+    "gfm_pre_date": "2022-11-17",
+    "gfm_post_date": "2022-11-29",
+    "label_acq_utc": "2022-11-29T15:29:57Z",
+    "imerg_run": "Final",
+    "s2_pre_dates": [
+      "2022-11-22"
+    ],
+    "s2_post_dates": [
+      "2022-11-27"
+    ]
+  },
   "gfm_class_area_km2": {
-    "pre": {
+    "pre (baseline)": {
       "not observed": 437.29,
       "excluded": 1315.87,
       "observed, no water": 659.52,
-      "flood": 0.0,
-      "reference water": 10.7
+      "flood (new on label map)": 0.0,
+      "reference water": 10.7,
+      "baseline water (pre-existing)": 0.0
     },
-    "post": {
+    "post (label)": {
       "not observed": 436.87,
       "excluded": 1315.87,
       "observed, no water": 648.24,
-      "flood": 11.28,
-      "reference water": 11.12
+      "flood (new on label map)": 11.28,
+      "reference water": 11.12,
+      "baseline water (pre-existing)": 0.0
     }
   },
   "pre_flood_px": 0,
+  "post_flood_px_all": 28205,
+  "post_new_flood_px": 28205,
+  "post_baseline_water_px": 0,
+  "post_flood_where_baseline_not_valid_px": 0,
   "post_overlap_conflict_px": 0,
   "post_excluded_share_of_observed_pct": 66.2,
   "post_advisory_flag_px_on_flood": {
@@ -196,7 +216,7 @@
     "3": 0
   },
   "s2_vs_gfm": {
-    "GFM flood (29 Nov)": {
+    "GFM new flood (2022-11-29)": {
       "n_px": 28205,
       "area_km2": 11.282,
       "median_dNDWI": 0.1823,
@@ -204,7 +224,10 @@
       "pct_MNDWI_post_gt0": 42.62,
       "pct_dNDWI_gt_0.1": 59.65
     },
-    "GFM observed dry (29 Nov)": {
+    "GFM baseline water (2022-11-29)": {
+      "n_px": 0
+    },
+    "GFM observed dry (2022-11-29)": {
       "n_px": 1620599,
       "area_km2": 648.24,
       "median_dNDWI": -0.053,

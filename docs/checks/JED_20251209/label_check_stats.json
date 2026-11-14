@@ -1,0 +1,291 @@
+{
+  "grid": {
+    "crs": "EPSG:32637",
+    "res_m": 20,
+    "width": 1821,
+    "height": 3327
+  },
+  "gfm_value_check": {
+    "pre": {
+      "ensemble_flood_extent": [
+        0,
+        1,
+        255
+      ],
+      "ensemble_flood_extent__nodata_tag": [
+        255.0
+      ],
+      "exclusion_mask": [
+        0,
+        1,
+        255
+      ],
+      "exclusion_mask__nodata_tag": [
+        255.0
+      ],
+      "reference_water_mask": [
+        0,
+        1,
+        2,
+        255
+      ],
+      "reference_water_mask__nodata_tag": [
+        255.0
+      ],
+      "advisory_flags": [
+        0,
+        255
+      ],
+      "advisory_flags__nodata_tag": [
+        255.0
+      ]
+    },
+    "post": {
+      "ensemble_flood_extent": [
+        0,
+        1,
+        255
+      ],
+      "ensemble_flood_extent__nodata_tag": [
+        255.0
+      ],
+      "exclusion_mask": [
+        0,
+        1,
+        255
+      ],
+      "exclusion_mask__nodata_tag": [
+        255.0
+      ],
+      "reference_water_mask": [
+        0,
+        1,
+        2,
+        255
+      ],
+      "reference_water_mask__nodata_tag": [
+        255.0
+      ],
+      "advisory_flags": [
+        0,
+        255
+      ],
+      "advisory_flags__nodata_tag": [
+        255.0
+      ]
+    }
+  },
+  "gfm_items": {
+    "pre": [
+      [
+        "ENSEMBLE_FLOOD_20251201T152836_VV_AF020M_E072N072T3",
+        "2025-12-01T15:28:36+00:00",
+        2257029,
+        788144,
+        9504
+      ],
+      [
+        "ENSEMBLE_FLOOD_20251201T152836_VV_AF020M_E072N075T3",
+        "2025-12-01T15:28:36+00:00",
+        1603157,
+        499353,
+        1677
+      ],
+      [
+        "ENSEMBLE_FLOOD_20251201T152901_VV_AF020M_E072N075T3",
+        "2025-12-01T15:29:01+00:00",
+        1095357,
+        433389,
+        17724
+      ],
+      [
+        "ENSEMBLE_FLOOD_20251201T152926_VV_AF020M_E072N075T3",
+        "2025-12-01T15:29:26+00:00",
+        0,
+        0,
+        0
+      ]
+    ],
+    "post": [
+      [
+        "ENSEMBLE_FLOOD_20251213T152835_VV_AF020M_E072N072T3",
+        "2025-12-13T15:28:35+00:00",
+        2258100,
+        789219,
+        16793
+      ],
+      [
+        "ENSEMBLE_FLOOD_20251213T152835_VV_AF020M_E072N075T3",
+        "2025-12-13T15:28:35+00:00",
+        1603633,
+        499726,
+        4932
+      ],
+      [
+        "ENSEMBLE_FLOOD_20251213T152900_VV_AF020M_E072N075T3",
+        "2025-12-13T15:29:00+00:00",
+        1095553,
+        433452,
+        17448
+      ],
+      [
+        "ENSEMBLE_FLOOD_20251213T152925_VV_AF020M_E072N075T3",
+        "2025-12-13T15:29:25+00:00",
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "s2_items": {
+    "pre": [
+      [
+        "S2A_37QDD_20251128_0_L2A",
+        0.023491
+      ],
+      [
+        "S2A_37QDE_20251128_0_L2A",
+        0.423274
+      ],
+      [
+        "S2A_37QED_20251128_0_L2A",
+        0.079927
+      ],
+      [
+        "S2A_37QEE_20251128_0_L2A",
+        0.017389
+      ]
+    ],
+    "post": [
+      [
+        "S2C_37QED_20251216_0_L2A",
+        2.876085
+      ],
+      [
+        "S2A_37QDE_20251218_0_L2A",
+        4.520709
+      ],
+      [
+        "S2A_37QED_20251218_0_L2A",
+        2.407922
+      ],
+      [
+        "S2A_37QEE_20251218_0_L2A",
+        0.806719
+      ]
+    ]
+  },
+  "event": {
+    "event_id": "JED_20251209",
+    "t0_utc": "2025-12-09T00:00:00Z",
+    "gfm_pre_date": "2025-12-01",
+    "gfm_post_date": "2025-12-13",
+    "label_acq_utc": "2025-12-13T15:28:35Z",
+    "imerg_run": "Late",
+    "s2_pre_dates": [
+      "2025-11-28"
+    ],
+    "s2_post_dates": [
+      "2025-12-16",
+      "2025-12-18"
+    ]
+  },
+  "gfm_class_area_km2": {
+    "pre (baseline)": {
+      "not observed": 441.19,
+      "excluded": 1293.85,
+      "observed, no water": 666.67,
+      "flood (new on label map)": 11.56,
+      "reference water": 10.12,
+      "baseline water (pre-existing)": 0.0
+    },
+    "post (label)": {
+      "not observed": 440.49,
+      "excluded": 1293.94,
+      "observed, no water": 662.58,
+      "flood (new on label map)": 6.9,
+      "reference water": 10.7,
+      "baseline water (pre-existing)": 8.77
+    }
+  },
+  "pre_flood_px": 28905,
+  "post_flood_px_all": 39173,
+  "post_new_flood_px": 17258,
+  "post_baseline_water_px": 21915,
+  "post_flood_where_baseline_not_valid_px": 2,
+  "post_overlap_conflict_px": 0,
+  "post_excluded_share_of_observed_pct": 65.3,
+  "post_advisory_flag_px_on_flood": {
+    "0": 17258,
+    "1": 0,
+    "2": 0,
+    "3": 0
+  },
+  "s2_vs_gfm": {
+    "GFM new flood (2025-12-13)": {
+      "n_px": 17258,
+      "area_km2": 6.903,
+      "median_dNDWI": 0.0009,
+      "pct_NDWI_post_gt0": 2.97,
+      "pct_MNDWI_post_gt0": 4.91,
+      "pct_dNDWI_gt_0.1": 12.72
+    },
+    "GFM baseline water (2025-12-13)": {
+      "n_px": 21915,
+      "area_km2": 8.766,
+      "median_dNDWI": -0.0049,
+      "pct_NDWI_post_gt0": 0.42,
+      "pct_MNDWI_post_gt0": 0.69,
+      "pct_dNDWI_gt_0.1": 2.46
+    },
+    "GFM observed dry (2025-12-13)": {
+      "n_px": 1656459,
+      "area_km2": 662.584,
+      "median_dNDWI": -0.0166,
+      "pct_NDWI_post_gt0": 2.22,
+      "pct_MNDWI_post_gt0": 1.78,
+      "pct_dNDWI_gt_0.1": 5.33
+    }
+  },
+  "zooms": [
+    {
+      "center_lon": 39.1219,
+      "center_lat": 21.3087,
+      "flood_px": 3195,
+      "stats": {
+        "n_px": 3195,
+        "area_km2": 1.278,
+        "median_dNDWI": 0.083,
+        "pct_NDWI_post_gt0": 0.94,
+        "pct_MNDWI_post_gt0": 0.5,
+        "pct_dNDWI_gt_0.1": 29.36
+      }
+    },
+    {
+      "center_lon": 39.2425,
+      "center_lat": 21.3538,
+      "flood_px": 1457,
+      "stats": {
+        "n_px": 1457,
+        "area_km2": 0.583,
+        "median_dNDWI": -0.0107,
+        "pct_NDWI_post_gt0": 0.0,
+        "pct_MNDWI_post_gt0": 0.0,
+        "pct_dNDWI_gt_0.1": 0.48
+      }
+    },
+    {
+      "center_lon": 39.0981,
+      "center_lat": 21.8282,
+      "flood_px": 1382,
+      "stats": {
+        "n_px": 1382,
+        "area_km2": 0.553,
+        "median_dNDWI": 0.0126,
+        "pct_NDWI_post_gt0": 0.51,
+        "pct_MNDWI_post_gt0": 4.49,
+        "pct_dNDWI_gt_0.1": 7.74
+      }
+    }
+  ]
+}

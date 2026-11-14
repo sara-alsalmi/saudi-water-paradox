@@ -1,10 +1,16 @@
-"""Step 2 — Label verification (review only; outputs are NOT part of the dataset).
+"""Step 2 — Label verification per event (review only; outputs are NOT part of the dataset).
 
-Clips GFM (pre/post event) and Sentinel-2 L2A (pre/post event) to the AOI on a
-common 20 m grid in the reference CRS, and writes:
-  docs/checks/label_check_overview.png   full-AOI comparison
-  docs/checks/label_check_zooms.png      zooms on the densest GFM flood areas
-  docs/checks/label_check_stats.md       numbers behind the maps
+Usage: 01_probe_labels.py [EVENT_ID ...]   (default: all events in config.yaml)
+
+Clips GFM (baseline/label scenes) and Sentinel-2 L2A (pre/post event) to the AOI on a
+common 20 m grid in the reference CRS, and writes per event:
+  docs/checks/<event_id>/label_check_overview.png   full-AOI comparison
+  docs/checks/<event_id>/label_check_zooms.png      zooms on the densest NEW-flood areas
+  docs/checks/<event_id>/label_check_stats.md/.json numbers behind the maps
+
+"New flood vs baseline" rule (approved): flood on the label scene that was NOT flooded on the
+baseline scene is NEW FLOOD (-> label 1 candidates); flood already present on the baseline is
+BASELINE WATER (neither label class).
 
 Nothing is written to data/. Remote COGs are read window-only (no full downloads).
 
@@ -38,14 +44,14 @@ from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform as warp_transform
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, load_config, make_grid  # noqa: E402
+from common import ROOT, events, load_config, make_grid  # noqa: E402
 
 NODATA = 255
-# class codes for the merged GFM map
-C_NODATA, C_EXCL, C_DRY, C_FLOOD, C_REFW = 0, 1, 2, 3, 4
+# class codes for the merged GFM map (C_BASE only on the label map: flooded on label AND baseline)
+C_NODATA, C_EXCL, C_DRY, C_FLOOD, C_REFW, C_BASE = 0, 1, 2, 3, 4, 5
 CLASS_NAMES = {C_NODATA: "not observed", C_EXCL: "excluded", C_DRY: "observed, no water",
-               C_FLOOD: "flood", C_REFW: "reference water"}
-CLASS_CMAP = ListedColormap(["#ffffff", "#9e9e9e", "#e8e2c8", "#d7191c", "#2c7bb6"])
+               C_FLOOD: "flood (new on label map)", C_REFW: "reference water", C_BASE: "baseline water (pre-existing)"}
+CLASS_CMAP = ListedColormap(["#ffffff", "#9e9e9e", "#e8e2c8", "#d7191c", "#2c7bb6", "#fdae61"])
 
 
 def day_range(d: str) -> str:
@@ -112,19 +118,23 @@ def load_gfm_date(cfg, date, grid):
 
 
 # ----------------------------------------------------------------------- Sentinel-2
-def load_s2_date(cfg, date, grid):
+def load_s2_dates(cfg, dates, grid):
+    """Dates in priority order; for each band the first clear (SCL) observation per pixel wins."""
     transform, width, height, _ = grid
     crs = cfg["grid"]["crs"]
     v = cfg["verification"]
     cat = Client.open(v["s2_stac_api"])
-    items = list(cat.search(collections=v["s2_collection"], bbox=cfg["aoi"]["bbox_wgs84"],
-                            datetime=day_range(date), max_items=50).items())
-    items = [i for i in items if i.properties.get("eo:cloud_cover", 100) <= v["s2_max_cloud_pct"]]
+    items = []
+    for d in dates:
+        its = list(cat.search(collections=v["s2_collection"], bbox=cfg["aoi"]["bbox_wgs84"],
+                              datetime=day_range(d), max_items=50).items())
+        items += sorted([i for i in its if i.properties.get("eo:cloud_cover", 100) <= v["s2_max_cloud_pct"]],
+                        key=lambda i: i.id)
     bands = {"blue": None, "green": None, "red": None, "nir": None, "swir16": None}
     out = {b: np.full((height, width), np.nan, np.float32) for b in bands}
     scl_all = np.zeros((height, width), np.uint8)
     used = []
-    for it in sorted(items, key=lambda i: i.id):
+    for it in items:
         scl, _ = read_to_grid(it.assets["scl"].href, transform, width, height, crs, Resampling.nearest)
         ok = ~np.isin(scl, (0, 1, 3, 8, 9, 10))           # drop nodata/saturated/shadow/cloud/cirrus
         for b in bands:
@@ -156,24 +166,38 @@ def rgb(s2):
 # --------------------------------------------------------------------------- main
 def main():
     cfg = load_config()
+    for ev in events(cfg, sys.argv[1:]):
+        run_event(cfg, ev)
+
+
+def run_event(cfg, ev):
     v = cfg["verification"]
     res = v["check_resolution_m"]
     grid = make_grid(cfg, res)
     transform, width, height, bounds = grid
-    outdir = ROOT / cfg["paths"]["checks"]
+    eid = ev["event_id"]
+    outdir = ROOT / cfg["paths"]["checks"] / eid
     outdir.mkdir(parents=True, exist_ok=True)
-    print(f"check grid {width}x{height} @ {res} m, bounds {bounds}")
+    print(f"[{eid}] check grid {width}x{height} @ {res} m, bounds {bounds}")
+    pre_d, post_d = ev["gfm_pre_date"], ev["gfm_post_date"]
+    s2_pre, s2_post = ", ".join(ev["s2_pre_dates"]), ", ".join(ev["s2_post_dates"])
 
     gfm = {}
-    for tag, d in (("pre", cfg["labels"]["pre_event_date"]), ("post", cfg["labels"]["post_event_date"])):
+    for tag, d in (("pre", pre_d), ("post", post_d)):
         print(f"GFM {tag} {d} ..."); gfm[tag] = load_gfm_date(cfg, d, grid)
     s2 = {}
-    for tag, d in (("pre", v["s2_pre_date"]), ("post", v["s2_post_date"])):
-        print(f"S2 {tag} {d} ..."); s2[tag] = load_s2_date(cfg, d, grid)
+    for tag, ds in (("pre", ev["s2_pre_dates"]), ("post", ev["s2_post_dates"])):
+        print(f"S2 {tag} {ds} ..."); s2[tag] = load_s2_dates(cfg, ds, grid)
     dndwi = s2["post"]["ndwi"] - s2["pre"]["ndwi"]
 
-    post = gfm["post"]["cls"]
+    # "new flood vs baseline": flood on the label map that was already flooded on the baseline
+    # becomes BASELINE WATER (neither label class)
+    pre_flood = gfm["pre"]["cls"] == C_FLOOD
+    post = gfm["post"]["cls"].copy()
+    post_flood_all = post == C_FLOOD
+    post[post_flood_all & pre_flood] = C_BASE
     flood, dry = post == C_FLOOD, post == C_DRY
+    base = post == C_BASE
     px_km2 = res * res / 1e6
 
     # ---------------- statistics: does S2 see water where GFM says flood?
@@ -196,13 +220,22 @@ def main():
         "gfm_value_check": {t: gfm[t]["uniques"] for t in gfm},
         "gfm_items": {t: gfm[t]["items"] for t in gfm},
         "s2_items": {t: s2[t]["items"] for t in s2},
-        "gfm_class_area_km2": {t: {CLASS_NAMES[c]: round(int((gfm[t]["cls"] == c).sum()) * px_km2, 2)
-                                   for c in CLASS_NAMES} for t in gfm},
-        "pre_flood_px": int((gfm["pre"]["cls"] == C_FLOOD).sum()),
+        "event": {k: ev[k] for k in ("event_id", "t0_utc", "gfm_pre_date", "gfm_post_date", "label_acq_utc",
+                                     "imerg_run", "s2_pre_dates", "s2_post_dates")},
+        "gfm_class_area_km2": {"pre (baseline)": {CLASS_NAMES[c]: round(int((gfm["pre"]["cls"] == c).sum()) * px_km2, 2)
+                                                  for c in CLASS_NAMES},
+                               "post (label)": {CLASS_NAMES[c]: round(int((post == c).sum()) * px_km2, 2)
+                                                for c in CLASS_NAMES}},
+        "pre_flood_px": int(pre_flood.sum()),
+        "post_flood_px_all": int(post_flood_all.sum()),
+        "post_new_flood_px": int(flood.sum()),
+        "post_baseline_water_px": int(base.sum()),
+        "post_flood_where_baseline_not_valid_px": int((post_flood_all & (gfm["pre"]["n_valid"] == 0)).sum()),
         "post_overlap_conflict_px": int(gfm["post"]["conflict"].sum()),
         "post_excluded_share_of_observed_pct": round(100 * float((post == C_EXCL).sum() / max(land_obs.sum(), 1)), 1),
         "post_advisory_flag_px_on_flood": {int(k): int(((gfm["post"]["advisory"] == k) & flood).sum()) for k in range(4)},
-        "s2_vs_gfm": {"GFM flood (29 Nov)": describe(flood), "GFM observed dry (29 Nov)": describe(dry)},
+        "s2_vs_gfm": {f"GFM new flood ({post_d})": describe(flood), f"GFM baseline water ({post_d})": describe(base),
+                      f"GFM observed dry ({post_d})": describe(dry)},
     }
 
     # ---------------- zoom selection: densest non-overlapping windows of GFM flood
@@ -231,14 +264,14 @@ def main():
     # ---------------- figures
     ext = (bounds[0] / 1e3, bounds[2] / 1e3, bounds[1] / 1e3, bounds[3] / 1e3)
     fig, axs = plt.subplots(1, 5, figsize=(26, 10), constrained_layout=True)
-    axs[0].imshow(rgb(s2["pre"]), extent=ext); axs[0].set_title(f"S2 true colour {v['s2_pre_date']} (pre)")
-    axs[1].imshow(rgb(s2["post"]), extent=ext); axs[1].set_title(f"S2 true colour {v['s2_post_date']} (post)")
+    axs[0].imshow(rgb(s2["pre"]), extent=ext); axs[0].set_title(f"S2 true colour {s2_pre} (pre)")
+    axs[1].imshow(rgb(s2["post"]), extent=ext); axs[1].set_title(f"S2 true colour {s2_post} (post)")
     im = axs[2].imshow(dndwi, extent=ext, cmap="RdBu", vmin=-0.3, vmax=0.3)
     axs[2].set_title("ΔNDWI (post − pre); blue = wetter")
     fig.colorbar(im, ax=axs[2], shrink=0.6)
-    for ax, t, d in ((axs[3], "post", cfg["labels"]["post_event_date"]), (axs[4], "pre", cfg["labels"]["pre_event_date"])):
-        ax.imshow(gfm[t]["cls"], extent=ext, cmap=CLASS_CMAP, vmin=0, vmax=4, interpolation="nearest")
-        ax.set_title(f"GFM {d} ({'label date' if t == 'post' else 'baseline'})")
+    for ax, arr, d, what in ((axs[3], post, post_d, "label date"), (axs[4], gfm["pre"]["cls"], pre_d, "baseline")):
+        ax.imshow(arr, extent=ext, cmap=CLASS_CMAP, vmin=0, vmax=5, interpolation="nearest")
+        ax.set_title(f"GFM {d} ({what})")
     for n, r0, c0 in zooms:
         x0, y1 = transform * (c0, r0)
         for ax in axs:
@@ -249,7 +282,8 @@ def main():
     for ax in axs:
         ax.set_xlabel("UTM 37N easting (km)")
     axs[0].set_ylabel("northing (km)")
-    fig.suptitle("Jeddah 24 Nov 2022 — GFM label check vs Sentinel-2 (review only, not dataset)", fontsize=14)
+    fig.suptitle(f"{eid} (t0 {ev['t0_utc']}) — GFM label check vs Sentinel-2 (review only, not dataset). "
+                 f"New flood {flood.sum() * px_km2:.2f} km², baseline water {base.sum() * px_km2:.2f} km²", fontsize=14)
     fig.savefig(outdir / "label_check_overview.png", dpi=110)
     plt.close(fig)
 
@@ -260,18 +294,20 @@ def main():
             fl = flood[sl]
             z = zinfo[i]
             axs[i, 0].imshow(rgb({k: s2["pre"][k][sl] for k in ("red", "green", "blue")}))
-            axs[i, 0].set_title(f"S2 pre {v['s2_pre_date']}  @ {z['center_lat']}N {z['center_lon']}E")
+            axs[i, 0].set_title(f"S2 pre  @ {z['center_lat']}N {z['center_lon']}E", fontsize=10)
             axs[i, 1].imshow(rgb({k: s2["post"][k][sl] for k in ("red", "green", "blue")}))
             axs[i, 1].contour(fl, levels=[0.5], colors="red", linewidths=0.8)
-            axs[i, 1].set_title(f"S2 post {v['s2_post_date']} + GFM flood outline (red)")
+            axs[i, 1].set_title("S2 post + GFM new-flood outline (red)", fontsize=10)
             im = axs[i, 2].imshow(dndwi[sl], cmap="RdBu", vmin=-0.3, vmax=0.3)
             axs[i, 2].contour(fl, levels=[0.5], colors="k", linewidths=0.6)
             axs[i, 2].set_title("ΔNDWI + GFM flood outline (black)")
-            axs[i, 3].imshow(post[sl], cmap=CLASS_CMAP, vmin=0, vmax=4, interpolation="nearest")
-            axs[i, 3].set_title(f"GFM {cfg['labels']['post_event_date']} classes ({n} flood px)")
+            axs[i, 3].imshow(post[sl], cmap=CLASS_CMAP, vmin=0, vmax=5, interpolation="nearest")
+            axs[i, 3].set_title(f"GFM {post_d} classes ({n} new-flood px)")
             for ax in axs[i]:
                 ax.set_xticks([]); ax.set_yticks([])
         fig.colorbar(im, ax=axs[:, 2], shrink=0.5)
+        fig.suptitle(f"{eid} — densest new-flood windows. S2 pre: {s2_pre}; S2 post: {s2_post}; "
+                     f"GFM label {post_d}, baseline {pre_d}", fontsize=13)
         axs[0, 3].legend(handles=[Patch(fc=CLASS_CMAP(i), ec="k", label=CLASS_NAMES[i]) for i in CLASS_NAMES],
                          loc="lower left", fontsize=8)
         fig.savefig(outdir / "label_check_zooms.png", dpi=100)
@@ -279,7 +315,8 @@ def main():
 
     (outdir / "label_check_stats.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     write_md(summary, outdir / "label_check_stats.md", cfg)
-    print(json.dumps({k: summary[k] for k in ("gfm_class_area_km2", "pre_flood_px", "post_overlap_conflict_px",
+    print(json.dumps({k: summary[k] for k in ("gfm_class_area_km2", "pre_flood_px", "post_new_flood_px",
+                                              "post_baseline_water_px", "post_overlap_conflict_px",
                                               "post_excluded_share_of_observed_pct", "s2_vs_gfm", "zooms",
                                               "gfm_value_check")}, indent=1, default=str))
 
@@ -291,7 +328,9 @@ def _sub_mask(mask, sub):
 
 
 def write_md(s, path, cfg):
-    L = ["# GFM label check — statistics (review only)", "",
+    L = [f"# GFM label check — {s['event']['event_id']} (review only)", "",
+         f"t0 {s['event']['t0_utc']}; GFM baseline {s['event']['gfm_pre_date']}, label {s['event']['gfm_post_date']} "
+         f"(acquired {s['event']['label_acq_utc']}); S2 pre {s['event']['s2_pre_dates']}, post {s['event']['s2_post_dates']}.", "",
          f"Generated by `scripts/01_probe_labels.py` on {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC. "
          f"Common grid: {s['grid']['crs']} @ {s['grid']['res_m']} m.", "",
          "Thresholds below (NDWI>0, MNDWI>0, ΔNDWI>0.1) are descriptive only, not labelling rules.", "",
@@ -299,7 +338,11 @@ def write_md(s, path, cfg):
          "|---|" + "---|" * len(CLASS_NAMES)]
     for t, d in s["gfm_class_area_km2"].items():
         L.append(f"| {t} | " + " | ".join(str(d[n]) for n in CLASS_NAMES.values()) + " |")
-    L += ["", f"- Flood pixels on pre-event baseline: **{s['pre_flood_px']}**",
+    L += ["", f"- Flood pixels on baseline ({s['event']['gfm_pre_date']}): **{s['pre_flood_px']}**",
+          f"- Flood pixels on label scene ({s['event']['gfm_post_date']}): {s['post_flood_px_all']} = "
+          f"**{s['post_new_flood_px']} new flood** + {s['post_baseline_water_px']} baseline water (neither label class)",
+          f"- Label-scene flood pixels where the baseline was not observed/valid (counted as new): "
+          f"{s['post_flood_where_baseline_not_valid_px']}",
           f"- Overlapping post-event scenes disagreeing (flood vs dry): **{s['post_overlap_conflict_px']}** px",
           f"- Excluded share of observed area (post): **{s['post_excluded_share_of_observed_pct']}%**",
           f"- Advisory flags on flood pixels (0 none/1 low-bs/2 rough/3 both): {s['post_advisory_flag_px_on_flood']}",

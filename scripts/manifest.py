@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,4 +53,11 @@ def record(source: str, path: Path, url: str, version: str, notes: str = "") -> 
             w.writeheader()
             for k in sorted(rows):
                 w.writerow(rows[k])
-        tmp.replace(MANIFEST)
+        for attempt in range(10):          # Windows: target briefly locked while another reader has it open
+            try:
+                tmp.replace(MANIFEST)
+                break
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.5)
